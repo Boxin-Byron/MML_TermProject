@@ -1,10 +1,10 @@
 EXP_NAME=IIW-400 # Name of the answer file to evaluate (located at $ANSWER_FOLDER/$EXP_NAME.jsonl)
 # Path to the annotation file
-ANNOTATION_FILE="/home/mingi/experiments/LLaVA/data/eval/imageinwords/IIW-400/data.jsonl"
+ANNOTATION_FILE="./dataset/iiw400/data.jsonl"
 # Directory containing the answer file to evaluate
-ANSWER_FOLDER="/home/mingi/experiments/SPARC/results"
+ANSWER_FOLDER="./results"
 # Directory where evaluation results will be saved
-SAVE_FOLDER="/home/mingi/experiments/SPARC/results"
+SAVE_FOLDER="./results"
 # Your OpenAI API key for evaluation
 OPENAI_API_KEY="OPENAI_API_KEY"
 

@@ -205,3 +205,25 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# 忽略所有数据集文件夹
+data/
+dataset/
+datasets/
+images/
+
+# 忽略模型权重文件
+*.pth
+*.pt
+*.bin
+
+# 忽略生成的评估结果
+output/
+eval_results/
+results/
+*.jsonl
+*.json
+
+# 忽略由于Mac或Windows产生的大型系统文件
+.DS_Store
+Thumbs.db

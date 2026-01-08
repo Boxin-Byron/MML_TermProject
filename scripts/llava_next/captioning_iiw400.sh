@@ -5,14 +5,15 @@ BETA=0.1 # parameter for EMA
 TAU=4.0 # Threshold
 LAYER=20 # layer used for token selection
 
-MODEL_PATH=liuhaotian/llava-v1.6-vicuna-7b
+source .env
+MODEL_PATH=$MODEL_PATH_V1_6
 DATASET_TYPE=iiw # Dataset type: options are coco, iiw, or docci
 # Path to input images
-IMAGE_FOLDER="/home/mingi/experiments/LLaVA/data/eval/DOCCI/images_aar"
+IMAGE_FOLDER="./dataset/docci/images_aar"
 # Path to annotation file
-ANNOTATION_FILE="/home/mingi/experiments/LLaVA/data/eval/imageinwords/IIW-400/data.jsonl"
+ANNOTATION_FILE="./dataset/iiw400/data.jsonl"
 # Directory where results will be saved
-SAVE_FOLDER="/home/mingi/experiments/SPARC/results"
+SAVE_FOLDER="./results"
 SEED=42 # Random seed for evaluation data sampling (used only for coco_val and docci)
 
 set -e

@@ -1,9 +1,9 @@
 EXPERIMENT_NAME=COCO
 
 # Directory where results will be saved
-ANSWER_FOLDER="/home/mingi/experiments/SPARC/results"
-ANNOTATION_FOLDER=/home/mingi/data/coco/annotations
-SAVE_FOLDER="/home/mingi/experiments/SPARC/results"
+ANSWER_FOLDER="./results"
+ANNOTATION_FOLDER="./dataset/coco/annotations"
+SAVE_FOLDER="./results"
 
 python chair.py \
     --cap_file $ANSWER_FOLDER/${EXPERIMENT_NAME}.jsonl \

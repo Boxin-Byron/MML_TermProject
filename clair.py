@@ -17,12 +17,7 @@ _engine_cache = {}
 class LLMEngine:
     @staticmethod
     def from_string(model_name):
-        if model_name == "gpt-4o":
-            return OpenAIEngine(model_name="gpt-4o")
-        elif model_name == "chat-gpt":
-            return OpenAIEngine(model_name="gpt-3.5-turbo")
-        else:
-            raise ValueError(f"Unknown model: {model_name}")
+        return OpenAIEngine(model_name=model_name)
 
     def __call__(self, prompt: str, n_completions: int = 1, **kwargs: Any) -> List[str]:
         return self.call(prompt, n_completions, **kwargs)
@@ -31,7 +26,10 @@ class LLMEngine:
 class OpenAIEngine(LLMEngine):
     def __init__(self, model_name):
         self.model_name = model_name
-        self.api = OpenAI()
+        self.api = OpenAI(
+            base_url=os.getenv("BASE_URL"),
+            api_key=os.getenv("API_KEY")
+        )
 
     def call(self, prompt, n_completions, temperature=0.0, max_tokens=1024):
         messages = [{"role": "user", "content": prompt}]

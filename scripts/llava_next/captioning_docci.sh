@@ -1,18 +1,19 @@
-DEVICE=1
+DEVICE=0
 EXP_NAME=DOCCI_llava-next # results will be saved as $SAVE_FOLDER/$EXP_NAME.jsonl
 ALPHA=1.1 # paramerter for attention re-weighting
 BETA=0.1 # parameter for EMA
 TAU=4.0 # Threshold
 LAYER=20 # layer used for token selection
 
-MODEL_PATH=liuhaotian/llava-v1.6-vicuna-7b
+source .env
+MODEL_PATH=$MODEL_PATH_V1_6
 DATASET_TYPE=docci # Dataset type: options are coco, iiw, or docci
 # Path to input images
-IMAGE_FOLDER="/home/mingi/experiments/LLaVA/data/eval/DOCCI/images"
+IMAGE_FOLDER="./dataset/docci/images"
 # Path to annotation file
-ANNOTATION_FILE="/home/mingi/experiments/LLaVA/data/eval/DOCCI/docci_descriptions.jsonl"
+ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
 # Directory where results will be saved
-SAVE_FOLDER="/home/mingi/experiments/SPARC/results"
+SAVE_FOLDER="./results"
 SEED=42 # Random seed for evaluation data sampling (used only for coco_val and docci)
 
 set -e
