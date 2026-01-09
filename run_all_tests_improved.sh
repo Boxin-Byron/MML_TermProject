@@ -21,85 +21,86 @@ SAVE_FOLDER="./results"
 DECAY=0.9
 GATE_TYPE="sigmoid"
 SHARPNESS=1.5
-
-# ==========================================
-# 1. IIW-400
-# ==========================================
-EXP_NAME="IIW-400_improved"
-DATASET_TYPE="iiw"
-IMAGE_FOLDER="./dataset/docci/images_aar"
-ANNOTATION_FILE="./dataset/iiw400/data.jsonl"
 SEED=42
 
-echo "Running IIW-400 Captioning (Improved)..."
-CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
-    --experiment_name "$EXP_NAME" \
-    --model-path "$MODEL_PATH_V1_5" \
-    --dataset_type "$DATASET_TYPE" \
-    --alpha "$ALPHA" \
-    --beta "$BETA" \
-    --image-folder "$IMAGE_FOLDER" \
-    --annotation-file "$ANNOTATION_FILE" \
-    --save_path "$SAVE_FOLDER" \
-    --start_layer 0 \
-    --end_layer 31 \
-    --selected_layer "$LAYER" \
-    --tau "$TAU" \
-    --seed "$SEED" \
-    --use_improved \
-    --decay "$DECAY" \
-    --gate_type "$GATE_TYPE" \
-    --sharpness "$SHARPNESS"
+# # ==========================================
+# # 1. IIW-400
+# # ==========================================
+# EXP_NAME="IIW-400_improved"
+# DATASET_TYPE="iiw"
+# IMAGE_FOLDER="./dataset/docci/images_aar"
+# ANNOTATION_FILE="./dataset/iiw400/data.jsonl"
+# SEED=42
 
-echo "Running IIW-400 CLAIR Evaluation (Improved)..."
-# Evaluation
-# Note: CLAIR evaluation script usually expects just the experiment name if answers are in SAVE_FOLDER
-python -m clair \
-    --annotation_file "$ANNOTATION_FILE" \
-    --answer_folder "$SAVE_FOLDER" \
-    --save_folder "$SAVE_FOLDER" \
-    --openai_api_key "$OPENAI_API_KEY" \
-    --experiment_name "$EXP_NAME" \
-    --data_type iiw
+# echo "Running IIW-400 Captioning (Improved)..."
+# CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
+#     --experiment_name "$EXP_NAME" \
+#     --model-path "$MODEL_PATH_V1_5" \
+#     --dataset_type "$DATASET_TYPE" \
+#     --alpha "$ALPHA" \
+#     --beta "$BETA" \
+#     --image-folder "$IMAGE_FOLDER" \
+#     --annotation-file "$ANNOTATION_FILE" \
+#     --save_path "$SAVE_FOLDER" \
+#     --start_layer 0 \
+#     --end_layer 31 \
+#     --selected_layer "$LAYER" \
+#     --tau "$TAU" \
+#     --seed "$SEED" \
+#     --use_improved \
+#     --decay "$DECAY" \
+#     --gate_type "$GATE_TYPE" \
+#     --sharpness "$SHARPNESS"
+
+# echo "Running IIW-400 CLAIR Evaluation (Improved)..."
+# # Evaluation
+# # Note: CLAIR evaluation script usually expects just the experiment name if answers are in SAVE_FOLDER
+# python -m clair \
+#     --annotation_file "$ANNOTATION_FILE" \
+#     --answer_folder "$SAVE_FOLDER" \
+#     --save_folder "$SAVE_FOLDER" \
+#     --openai_api_key "$OPENAI_API_KEY" \
+#     --experiment_name "$EXP_NAME" \
+#     --data_type iiw
 
 
-# ==========================================
-# 2. DOCCI
-# ==========================================
-EXP_NAME="DOCCI_improved"
-DATASET_TYPE="docci"
-IMAGE_FOLDER="./dataset/docci/images"
-ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
+# # ==========================================
+# # 2. DOCCI
+# # ==========================================
+# EXP_NAME="DOCCI_improved"
+# DATASET_TYPE="docci"
+# IMAGE_FOLDER="./dataset/docci/images"
+# ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
 
-echo "Running DOCCI Captioning (Improved)..."
-CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
-    --experiment_name "$EXP_NAME" \
-    --model-path "$MODEL_PATH_V1_5" \
-    --dataset_type "$DATASET_TYPE" \
-    --alpha "$ALPHA" \
-    --beta "$BETA" \
-    --image-folder "$IMAGE_FOLDER" \
-    --annotation-file "$ANNOTATION_FILE" \
-    --save_path "$SAVE_FOLDER" \
-    --start_layer 0 \
-    --end_layer 31 \
-    --selected_layer "$LAYER" \
-    --tau "$TAU" \
-    --seed "$SEED" \
-    --use_improved \
-    --decay "$DECAY" \
-    --gate_type "$GATE_TYPE" \
-    --sharpness "$SHARPNESS"
+# echo "Running DOCCI Captioning (Improved)..."
+# CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
+#     --experiment_name "$EXP_NAME" \
+#     --model-path "$MODEL_PATH_V1_5" \
+#     --dataset_type "$DATASET_TYPE" \
+#     --alpha "$ALPHA" \
+#     --beta "$BETA" \
+#     --image-folder "$IMAGE_FOLDER" \
+#     --annotation-file "$ANNOTATION_FILE" \
+#     --save_path "$SAVE_FOLDER" \
+#     --start_layer 0 \
+#     --end_layer 31 \
+#     --selected_layer "$LAYER" \
+#     --tau "$TAU" \
+#     --seed "$SEED" \
+#     --use_improved \
+#     --decay "$DECAY" \
+#     --gate_type "$GATE_TYPE" \
+#     --sharpness "$SHARPNESS"
 
-echo "Running DOCCI CLAIR Evaluation (Improved)..."
-python -m clair \
-    --annotation_file "$ANNOTATION_FILE" \
-    --answer_folder "$SAVE_FOLDER" \
-    --save_folder "$SAVE_FOLDER" \
-    --openai_api_key "$OPENAI_API_KEY" \
-    --experiment_name "$EXP_NAME" \
-    --data_type docci \
-    --seed "$SEED"
+# echo "Running DOCCI CLAIR Evaluation (Improved)..."
+# python -m clair \
+#     --annotation_file "$ANNOTATION_FILE" \
+#     --answer_folder "$SAVE_FOLDER" \
+#     --save_folder "$SAVE_FOLDER" \
+#     --openai_api_key "$OPENAI_API_KEY" \
+#     --experiment_name "$EXP_NAME" \
+#     --data_type docci \
+#     --seed "$SEED"
 
 # ==========================================
 # 3. COCO

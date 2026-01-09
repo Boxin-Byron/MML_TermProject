@@ -121,7 +121,15 @@ class SoftMomentumBuffer:
         # If momentum is higher (accumulated), we get > alpha.
         
         # Map shape: [bsz, num_patches]. Broadcast to [bsz, num_heads, num_patches, head_dim]
-        momentum_factor = self.momentum_map.unsqueeze(1).unsqueeze(-1) # [bsz, 1, patches, 1]
+        # momentum_map is [bsz, patches] or [patches]
+        if self.momentum_map.dim() == 1:
+             # Assume single batch if 1D
+             momentum_factor = self.momentum_map.unsqueeze(0).unsqueeze(1).unsqueeze(-1) # [1, 1, patches, 1]
+        elif self.momentum_map.dim() == 2:
+            momentum_factor = self.momentum_map.unsqueeze(1).unsqueeze(-1) # [bsz, 1, patches, 1]
+        else:
+             # Unexpected shape
+             return
         
         # Calculate scale
         # We use (alpha - 1) as the gain factor.
@@ -143,6 +151,11 @@ class SoftMomentumBuffer:
         if valid_start < valid_end:
             patch_len = valid_end - valid_start
             # Slice momentum to match (in case of weird partial updates)
+            # Scale factor should only match the patches we are actually scaling
+            # Scale shape: [bsz, 1, patches, 1] 
+            # We need to slice usage of scale too if we are only scaling a subset
+             
+            # scale slice needs to have 4 dimensions.
             scale_slice = scale[:, :, :patch_len, :]
             
             value[:, :, valid_start:valid_end, :] *= scale_slice.to(value.dtype)
@@ -217,7 +230,7 @@ def forward_improved(
     
     if self.layer_idx >= se_layers[0] and self.layer_idx <= se_layers[1]:
          # In improved version, we trust the buffer's momentum state
-         if indices_buffer is not None:
+         if indices_buffer is not None and len(past_key_value.value_cache) > self.layer_idx:
              indices_buffer.calibrate(past_key_value.value_cache[self.layer_idx], alpha, image_token_index, self.layer_idx)
     # --- SPARC IMPROVED LOGIC END ---
 
