@@ -122,15 +122,9 @@ class SoftMomentumBuffer:
         
         # Map shape: [bsz, num_patches]. Broadcast to [bsz, num_heads, num_patches, head_dim]
         # momentum_map is [bsz, patches] or [patches]
-        if self.momentum_map.dim() == 1:
-             # Assume single batch if 1D
-             momentum_factor = self.momentum_map.unsqueeze(0).unsqueeze(1).unsqueeze(-1) # [1, 1, patches, 1]
-        elif self.momentum_map.dim() == 2:
-            momentum_factor = self.momentum_map.unsqueeze(1).unsqueeze(-1) # [bsz, 1, patches, 1]
-        else:
-             # Unexpected shape
-             return
-        
+        # Reshape to [B, 1, patches, 1] for broadcasting
+        momentum_factor = self.momentum_map.reshape(-1, self.num_image_patches).unsqueeze(1).unsqueeze(-1)
+
         # Calculate scale
         # We use (alpha - 1) as the gain factor.
         scale = 1.0 + momentum_factor * (alpha - 1.0)
