@@ -17,6 +17,10 @@ from attn_util_improved import (
     add_custom_attention_layers_improved,
     SoftMomentumBuffer,
 )
+from attn_util_improved_v2 import (
+    add_custom_attention_layers_improved_v2,
+    AdaptiveMomentumBuffer,
+)
 from dataset_loader import prepare_dataloader
 
 
@@ -30,7 +34,14 @@ def eval_model(args):
         model_path, args.model_base, model_name, load_4bit=True
     )
 
-    if args.use_improved:
+    if args.use_v2:
+        buffer = AdaptiveMomentumBuffer(
+            decay=args.decay, 
+            l_factor=args.l_factor,
+            gate_type=args.gate_type, 
+            sharpness=args.sharpness
+        )
+    elif args.use_improved:
         buffer = SoftMomentumBuffer(
             decay=args.decay, gate_type=args.gate_type, sharpness=args.sharpness
         )
@@ -38,7 +49,17 @@ def eval_model(args):
         buffer = SelectedIndexBuffer()
 
     if args.alpha != 1.0:
-        if args.use_improved:
+        if args.use_v2:
+             add_custom_attention_layers_improved_v2(
+                model=model,
+                alpha=args.alpha,
+                beta=args.beta,
+                tau=args.tau,
+                selected_layer=args.selected_layer,
+                se_layers=(args.start_layer, args.end_layer),
+                indices_buffer=buffer,
+            )
+        elif args.use_improved:
             add_custom_attention_layers_improved(
                 model=model,
                 alpha=args.alpha,
@@ -164,7 +185,9 @@ if __name__ == "__main__":
     
     # Improved SPARC arguments
     parser.add_argument("--use_improved", action="store_true", help="Use improved SPARC logic")
+    parser.add_argument("--use_v2", action="store_true", help="Use improved V2 SPARC logic")
     parser.add_argument("--decay", type=float, default=0.9, help="Momentum decay factor")
+    parser.add_argument("--l_factor", type=float, default=2.2, help="L-factor for Adaptive Thresholding (Tau = Mu + L*Sigma)")
     parser.add_argument("--gate_type", type=str, default="bounded_relu", choices=["sigmoid", "relu", "bounded_relu"], help="Gate type for improved SPARC")
     parser.add_argument("--sharpness", type=float, default=1.5, help="Sharpness for sigmoid gate")
 

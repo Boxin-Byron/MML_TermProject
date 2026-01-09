@@ -1,3 +1,4 @@
+
 import torch
 from types import MethodType
 from functools import partial
@@ -16,92 +17,131 @@ from transformers.cache_utils import Cache
 
 logger = logging.getLogger(__name__)
 
-import json
+# Based on statistical analysis
+DEFAULT_L_FACTOR = 2.5 # Median value from analysis was ~2.2171
 
-# Global file handle/path for logging stats
-STATS_LOG_FILE = "ratio_stats.jsonl"
-
-class SoftMomentumBuffer:
+class AdaptiveMomentumBuffer:
     """
-    Improved Buffer for SPARC implementing Soft-Gated Activation and Time-Decayed Momentum.
+    SPARC Improved V2:
+    1. Adaptive Thresholding (Tau = Mean + L * Std)
+    2. Semantic-Aware Momentum (Decay drops when attention shifts)
+    3. Bounded ReLU Activation
     """
-    def __init__(self, decay=0.9, gate_type: Literal['sigmoid', 'relu', 'bounded_relu'] = 'sigmoid', 
+    def __init__(self, decay=0.9, l_factor=DEFAULT_L_FACTOR, 
+                 gate_type: Literal['sigmoid', 'relu', 'bounded_relu'] = 'bounded_relu', 
                  sharpness=1.0):
-        self.momentum_map = None  # Stores the momentum of activations for each image patch
+        self.momentum_map = None 
         self.input_len = 0
         self.num_image_patches = None
         
-        # Hyperparameters for improvements
-        self.decay = decay  # Decay factor for time-decayed momentum (0 < decay < 1)
-        self.gate_type = gate_type # Type of soft gating
-        self.sharpness = sharpness # Controls steepness of sigmoid
+        self.decay_base = decay
+        self.l_factor = l_factor
+        self.gate_type = gate_type
+        self.sharpness = sharpness
         
-        # Optimization: Cache the scaling factor to avoid recomputation across layers
         self.cached_scale = None
-        
-        # Clear stats log on init (optional, or append)
-        # with open(STATS_LOG_FILE, 'w') as f: pass
+        self.prev_activation_norm = None # To detect semantic shift
 
-    def update_momentum(self, ratio, tau, image_token_index):
+    def update_momentum(self, ratio, image_token_index, image_attention=None):
         """
-        Calculates soft activation from attention ratio and updates the momentum map.
-        
+        Calculates adaptive activation and updates momentum.
         Args:
-            ratio: (Tensor) (image_attention - avg) / avg
-            tau: (float) Threshold used in original binary selection (now used as soft bias)
+            ratio: (Tensor) The attention ratio (z-score like) [bsz, num_patches]
+                   Ideally calculated as (current - avg) / (avg + eps)
+            image_attention: (Tensor, optional) Raw attention [bsz, num_patches].
+                             Used for adaptive thresholding statistics if ratio is just raw difference.
         """
+        # --- 1. Adaptive Thresholding ---
+        # NOTE: We now assume `ratio` passed in is already a normalized score or we apply normalization here.
+        # But wait, Adaptive Thresholding requires us to know the statistics of the CURRENT ATTENTION distribution.
+        # The user wants: \tau_dynamic = \mu + L * \sigma
+        # And we want to select Ratio > \tau_dynamic ? NO.
+        # We want to select Attention > \tau_dynamic.
         
-        # --- LOGGING STATS START ---
-        # Log ratio statistics to file for analysis
-        try:
-            r_np = ratio.float().cpu().numpy().tolist()
-            with open(STATS_LOG_FILE, "a") as f:
-                f.write(json.dumps({"ratios": r_np}) + "\n")
-        except Exception as e:
-            pass
-        # --- LOGGING STATS END ---
+        # Correction based on user feedback and logical consistency:
+        # We need to operate on the same distribution we analyzed.
+        # If we analyzed Ratios: L=2.2 means we want Ratio > Mean_Ratio + 2.2 * Std_Ratio.
+        
+        # Calculate statistics of the input distribution (Ratio)
+        mu = ratio.mean(dim=-1, keepdim=True) # [bsz, 1]
+        sigma = ratio.std(dim=-1, keepdim=True) + 1e-6 # [bsz, 1]
+        
+        # Determine dynamic Tau for Ratios
+        # tau_dynamic = mu + L * sigma
+        tau_dynamic = mu + self.l_factor * sigma
+        
+        # Calculate 'x' (distance from threshold)
+        x = ratio - tau_dynamic
 
-        # 1. Soft-Gated Activation
-        # We shift the ratio by tau so that 'tau' is the center/start of activation
-        # Logic: If ratio > tau, we want positive activation.
-        
-        # Input to gate
-        x = ratio - tau
-        
+        # --- 2. Activation ---
         if self.gate_type == 'sigmoid':
-            # Sigmoid gating: maps (-inf, inf) -> (0, 1)
-            # Problem: Leaks activation even for values < tau (e.g. sigmoid(-2) = 0.12)
-            # This destroys sparsity and boosts noise.
+            # Soft but leaky
             activation = torch.sigmoid(x * self.sharpness)
         elif self.gate_type == 'relu':
-            # ReLU gating: maps (-inf, inf) -> [0, inf)
-            # Problem: Unbounded. Very strong signals cause explosion.
+            # Hard but unbounded
             activation = F.relu(x)
         elif self.gate_type == 'bounded_relu':
-            # Bounded ReLU / Rectified Tanh: maps (-inf, inf) -> [0, 1)
-            # 1. Tanh maps to (-1, 1). 
-            # 2. Values < tau become negative in tanh, ReLU kills them (Strict 0).
-            # 3. Values > tau become positive, ReLU keeps them, Tanh saturates at 1.
-            activation = F.relu(torch.tanh(x * self.sharpness))
+            # Hard 0, Soft transition to 1
+            # Normalizing X by sigma might make sharpness more consistent across images?
+            # Let's try: x_norm = x / sigma
+            x_norm = x / (sigma + 1e-6)
+            activation = F.relu(torch.tanh(x_norm * self.sharpness))
         else:
             raise ValueError(f"Unknown gate_type: {self.gate_type}")
 
-        # 2. Time-Decayed Momentum
-        # Update momentum: M_t = decay * M_{t-1} + activation
-        # We need to initialize momentum_map if it's None.
+        # --- 3. Semantic-Aware Momentum Decay ---
+        # Detect if attention focus has shifted significantly
+        current_decay = self.decay_base
+        
+        if self.momentum_map is not None:
+            if activation.dim() == 1:
+                act_flat = activation.view(1, -1)
+                mom_flat = self.momentum_map.view(1, -1)
+            else:
+                act_flat = activation.view(activation.size(0), -1)
+                mom_flat = self.momentum_map.view(self.momentum_map.size(0), -1)
+            
+            # Optimization & Stability: 
+            # If activation is sparse (near zero), skip cosine sim implies orthogonality -> decay=0 -> WIPE MEMORY.
+            # Instead, if signal is weak, we should preserve memory (decay=base).
+            
+            act_norm = act_flat.norm(dim=-1, keepdim=True)
+            mom_norm = mom_flat.norm(dim=-1, keepdim=True)
+            
+            # Valid comparison requires both vectors to have magnitude
+            valid_mask = (act_norm > 1e-6) & (mom_norm > 1e-6)
+            
+            # Default to base decay
+            current_decay_tensor = torch.full((act_flat.size(0), 1), self.decay_base, 
+                                            device=activation.device, dtype=activation.dtype)
+            
+            if valid_mask.any():
+                # Only compute sim where valid
+                cos_sim = F.cosine_similarity(act_flat, mom_flat, dim=-1).unsqueeze(-1)
+                adaptive_decay = self.decay_base * (cos_sim ** 2)
+                current_decay_tensor = torch.where(valid_mask, adaptive_decay, current_decay_tensor)
+            
+            current_decay = current_decay_tensor
+
+        # --- Update Momentum ---
         if self.momentum_map is None:
              self.momentum_map = torch.zeros_like(activation)
         
-        # Ensure shapes match (handle potential batch size differences if any, usually 1)
         if self.momentum_map.shape != activation.shape:
              self.momentum_map = torch.zeros_like(activation)
 
-        # In-place update for efficiency
-        # Use Exponential Moving Average (EMA) to keep momentum bounded in [0, 1]
         # M_t = decay * M_{t-1} + (1 - decay) * activation
-        self.momentum_map.mul_(self.decay).add_(activation, alpha=(1.0 - self.decay))
+        # Note: decay is now dynamic per batch item
         
-        # Invalidate cache since momentum has changed
+        # Python float decay
+        if isinstance(current_decay, float):
+            alpha_mix = 1.0 - current_decay
+            self.momentum_map.mul_(current_decay).add_(activation, alpha=alpha_mix)
+        else:
+            # Tensor decay
+            alpha_mix = 1.0 - current_decay
+            self.momentum_map = self.momentum_map * current_decay + activation * alpha_mix
+        
         self.cached_scale = None
 
     def update_input_len(self, length):
@@ -112,80 +152,45 @@ class SoftMomentumBuffer:
         self.input_len = 0
         self.num_image_patches = None
         self.cached_scale = None
+        self.prev_activation_norm = None
 
     def calibrate(self, value, alpha, image_token_index, layer_idx=None):
-        """
-        Applies calibration to token representations using the accumulated momentum map.
-        
-        Args:
-            value: (Tensor) The Value cache tensor [bsz, num_heads, seq_len, head_dim]
-            alpha: (float) The base scaling factor.
-            image_token_index: (int) Start index of image tokens.
-        """
         if self.momentum_map is None:
             return
 
-        # We need to apply the boost to the image tokens in the value cache.
-        # Image tokens are located at: image_token_index : image_token_index + num_patches
-        
-        # Ensure we have image patches count
         if self.num_image_patches is None:
              return
 
-        # Slice the value tensor to get image tokens
-        # shape: [bsz, num_heads, seq_len, head_dim]
-        # We want to modify value[:, :, start:end, :]
-        start = image_token_index
-        end = start + self.num_image_patches
-        
-        if value.shape[2] < end:
-            # Current sequence might calculate attention for tokens *before* full image is processed? 
-            # Or this might happen during prefill if we chunk.
-            # Usually LLaVA prefill has full image.
-            # During generation, seq_len grows. image tokens are static in past.
-            pass
-
-        # Prepare modulation factor
-        # Optimization: use cached scale if available
+        # Optimization: use cached scale
         if self.cached_scale is None:
-            # Map shape: [bsz, num_patches]. Broadcast to [bsz, num_heads, num_patches, head_dim]
-            # momentum_map is [bsz, patches] or [patches]
-            # Reshape to [B, 1, patches, 1] for broadcasting
-            momentum_factor = self.momentum_map.reshape(-1, self.num_image_patches).unsqueeze(1).unsqueeze(-1)
-
-            # Calculate scale
-            # We use (alpha - 1) as the gain factor.
+            # momentum_map is usually [1, num_patches] or [num_patches].
+            # We want [bsz, 1, num_patches, 1]
+            
+            num_patches = self.momentum_map.shape[-1]
+            momentum_factor = self.momentum_map.reshape(-1, 1, num_patches, 1)
+            
+            # Use (alpha - 1.0) directly
             self.cached_scale = 1.0 + momentum_factor * (alpha - 1.0)
         
         scale = self.cached_scale
 
-        # Apply scale
-        # value is [bsz, num_kv_heads, seq_len, head_dim]
+        start = image_token_index
+        end = start + self.num_image_patches
         
-        # Safe slice update
         current_len = value.shape[2]
         valid_end = min(end, current_len)
         valid_start = start
         
         if valid_start < valid_end:
             patch_len = valid_end - valid_start
-            # Slice momentum to match (in case of weird partial updates)
-            # Scale factor should only match the patches we are actually scaling
-            # Scale shape: [bsz, 1, patches, 1] 
-            # We need to slice usage of scale too if we are only scaling a subset
-             
-            # scale slice needs to have 4 dimensions.
             scale_slice = scale[:, :, :patch_len, :]
-            
-            # In-place multiplication
             value[:, :, valid_start:valid_end, :].mul_(scale_slice.to(value.dtype))
 
     def update_patch_num(self, num_image_patches):
         self.num_image_patches = num_image_patches
 
 
-# Improved attention forward pass
-def forward_improved(
+def forward_improved_v2(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -197,15 +202,15 @@ def forward_improved(
     image_token_index: Optional[int] = 35,
     alpha: Optional[float] = 1.0,
     beta: Optional[float] = 0.0,
-    tau: Optional[float] = 2,
+    tau: Optional[float] = 2, # Kept for interface compatibility, but ignored in V2
     selected: Optional[bool] = False,
     se_layers: Optional[Tuple[int, int]] = None,
-    indices_buffer: Optional[SoftMomentumBuffer] = None, # Changed type hint
+    indices_buffer: Optional[AdaptiveMomentumBuffer] = None, 
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
 
-    # Standard LLaMA Attention Projection Logic
+    # Standard LLaMA Logic ...
     if self.config.pretraining_tp > 1:
         key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
         query_slices = self.q_proj.weight.split((self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0)
@@ -232,27 +237,17 @@ def forward_improved(
     kv_seq_len = key_states.shape[-2]
     if past_key_value is not None:
         if self.layer_idx is None:
-            raise ValueError(
-                f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
-                "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
-                "with a layer index."
-            )
+            raise ValueError("layer_idx required")
         kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
         
     cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
-    # --- SPARC IMPROVED LOGIC START ---
-    # Apply Calibration using Momentum Buffer from previous steps
-    # Note: We calibrate the cached values *before* current step update if possible, 
-    # but efficient cache implementation might require calibrating the stored cache.
-    # The original code calibrates 'past_key_value.value_cache[self.layer_idx]'.
-    
+    # --- SPARC V2 LOGIC START ---
     if self.layer_idx >= se_layers[0] and self.layer_idx <= se_layers[1]:
-         # In improved version, we trust the buffer's momentum state
          if indices_buffer is not None and len(past_key_value.value_cache) > self.layer_idx:
              indices_buffer.calibrate(past_key_value.value_cache[self.layer_idx], alpha, image_token_index, self.layer_idx)
-    # --- SPARC IMPROVED LOGIC END ---
+    # --- SPARC V2 LOGIC END ---
 
     if len(past_key_value.key_cache) > self.layer_idx:
         gen_new_token = True
@@ -268,22 +263,16 @@ def forward_improved(
 
     attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
     
-    if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
-        raise ValueError(f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is {attn_weights.size()}")
-
     if attention_mask is not None:
          attn_weights = attn_weights + attention_mask
 
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
     attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
 
-    # Calculate Image Attention stats for SPARC
     if gen_new_token == False and self.layer_idx == 0:
         if indices_buffer is not None:
             indices_buffer.update_patch_num(attn_weights.shape[-1] - indices_buffer.input_len)
 
-    # Get attention on image tokens
-    # Taking the mean across heads
     num_im_patches = indices_buffer.num_image_patches if indices_buffer.num_image_patches else 0
     if num_im_patches > 0:
         image_attention = attn_weights[
@@ -299,17 +288,15 @@ def forward_improved(
                 # ratio = (current - avg) / avg
                 ratio = (image_attention - self.image_attention) / (self.image_attention + 1e-6)
                 ratio = ratio.squeeze(dim=0) # [num_patches] or [bsz, num_patches] usually bsz=1
-                
-                # --- SPARC IMPROVED UPDATE ---
-                # Update Soft Momentum Buffer
+
                 if indices_buffer is not None:
-                    indices_buffer.update_momentum(ratio, tau, image_token_index)
-                # -----------------------------
+                    # V2: Update momentum with Adaptive Thresholding logic
+                    # Pass ratio, buffer handles unique thresholding statistics
+                    indices_buffer.update_momentum(ratio, image_token_index)
 
         if not gen_new_token:
             self.image_attention = image_attention
         else:
-            # Baseline EMA update
             self.image_attention = (1 - beta) * image_attention + beta * self.image_attention
 
     attn_output = torch.matmul(attn_weights, value_states)
@@ -328,7 +315,7 @@ def forward_improved(
     return attn_output, attn_weights, past_key_value
 
 
-def add_custom_attention_layers_improved(
+def add_custom_attention_layers_improved_v2(
     model,
     lm_model="llama",
     alpha=1,
@@ -338,13 +325,10 @@ def add_custom_attention_layers_improved(
     se_layers=(0, 31),
     indices_buffer=None,
 ):
-    """
-    Injects the improved SPARC attention mechanism into the model.
-    """
     for i, layer in enumerate(model.model.layers):
         selected = True if selected_layer == i else False
         forward_ = partial(
-            forward_improved,
+            forward_improved_v2,
             alpha=alpha,
             beta=beta,
             tau=tau,
