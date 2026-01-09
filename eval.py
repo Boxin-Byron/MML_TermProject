@@ -13,6 +13,10 @@ from attn_util import (
     add_custom_attention_layers,
     SelectedIndexBuffer,
 )
+from attn_util_improved import (
+    add_custom_attention_layers_improved,
+    SoftMomentumBuffer,
+)
 from dataset_loader import prepare_dataloader
 
 
@@ -26,18 +30,34 @@ def eval_model(args):
         model_path, args.model_base, model_name, load_4bit=True
     )
 
-    buffer = SelectedIndexBuffer()
+    if args.use_improved:
+        buffer = SoftMomentumBuffer(
+            decay=args.decay, gate_type=args.gate_type, sharpness=args.sharpness
+        )
+    else:
+        buffer = SelectedIndexBuffer()
 
     if args.alpha != 1.0:
-        add_custom_attention_layers(
-            model=model,
-            alpha=args.alpha,
-            beta=args.beta,
-            tau=args.tau,
-            selected_layer=args.selected_layer,
-            se_layers=(args.start_layer, args.end_layer),
-            indices_buffer=buffer,
-        )
+        if args.use_improved:
+            add_custom_attention_layers_improved(
+                model=model,
+                alpha=args.alpha,
+                beta=args.beta,
+                tau=args.tau,
+                selected_layer=args.selected_layer,
+                se_layers=(args.start_layer, args.end_layer),
+                indices_buffer=buffer,
+            )
+        else:
+            add_custom_attention_layers(
+                model=model,
+                alpha=args.alpha,
+                beta=args.beta,
+                tau=args.tau,
+                selected_layer=args.selected_layer,
+                se_layers=(args.start_layer, args.end_layer),
+                indices_buffer=buffer,
+            )
 
     data_loader, annotations = prepare_dataloader(
         dataset_type=args.dataset_type,
@@ -141,6 +161,13 @@ if __name__ == "__main__":
     parser.add_argument("--start_layer", type=int, default=0)
     parser.add_argument("--end_layer", type=int, default=31)
     parser.add_argument("--seed", type=int, default=42)
+    
+    # Improved SPARC arguments
+    parser.add_argument("--use_improved", action="store_true", help="Use improved SPARC logic")
+    parser.add_argument("--decay", type=float, default=0.9, help="Momentum decay factor")
+    parser.add_argument("--gate_type", type=str, default="sigmoid", choices=["sigmoid", "relu"], help="Gate type for improved SPARC")
+    parser.add_argument("--sharpness", type=float, default=1.0, help="Sharpness for sigmoid gate")
+
     args = parser.parse_args()
 
     eval_model(args)
