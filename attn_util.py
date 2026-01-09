@@ -7,7 +7,6 @@ import torch.nn as nn
 import logging
 from dataclasses import dataclass
 import math
-from sklearn.cluster import KMeans
 from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     rotate_half,

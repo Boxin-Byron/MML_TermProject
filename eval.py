@@ -165,8 +165,8 @@ if __name__ == "__main__":
     # Improved SPARC arguments
     parser.add_argument("--use_improved", action="store_true", help="Use improved SPARC logic")
     parser.add_argument("--decay", type=float, default=0.9, help="Momentum decay factor")
-    parser.add_argument("--gate_type", type=str, default="sigmoid", choices=["sigmoid", "relu"], help="Gate type for improved SPARC")
-    parser.add_argument("--sharpness", type=float, default=1.0, help="Sharpness for sigmoid gate")
+    parser.add_argument("--gate_type", type=str, default="bounded_relu", choices=["sigmoid", "relu", "bounded_relu"], help="Gate type for improved SPARC")
+    parser.add_argument("--sharpness", type=float, default=1.5, help="Sharpness for sigmoid gate")
 
     args = parser.parse_args()
 

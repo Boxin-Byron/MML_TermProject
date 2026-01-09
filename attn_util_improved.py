@@ -30,6 +30,9 @@ class SoftMomentumBuffer:
         self.decay = decay  # Decay factor for time-decayed momentum (0 < decay < 1)
         self.gate_type = gate_type # Type of soft gating
         self.sharpness = sharpness # Controls steepness of sigmoid
+        
+        # Optimization: Cache the scaling factor to avoid recomputation across layers
+        self.cached_scale = None
 
     def update_momentum(self, ratio, tau, image_token_index):
         """
@@ -48,13 +51,19 @@ class SoftMomentumBuffer:
         
         if self.gate_type == 'sigmoid':
             # Sigmoid gating: maps (-inf, inf) -> (0, 1)
-            # We apply sharpness factor. 
-            # If ratio = tau, activation is 0.5.
+            # Problem: Leaks activation even for values < tau (e.g. sigmoid(-2) = 0.12)
+            # This destroys sparsity and boosts noise.
             activation = torch.sigmoid(x * self.sharpness)
         elif self.gate_type == 'relu':
             # ReLU gating: maps (-inf, inf) -> [0, inf)
-            # Preserves magnitude differences better for very strong signals
+            # Problem: Unbounded. Very strong signals cause explosion.
             activation = F.relu(x)
+        elif self.gate_type == 'bounded_relu':
+            # Bounded ReLU / Rectified Tanh: maps (-inf, inf) -> [0, 1)
+            # 1. Tanh maps to (-1, 1). 
+            # 2. Values < tau become negative in tanh, ReLU kills them (Strict 0).
+            # 3. Values > tau become positive, ReLU keeps them, Tanh saturates at 1.
+            activation = F.relu(torch.tanh(x * self.sharpness))
         else:
             raise ValueError(f"Unknown gate_type: {self.gate_type}")
 
@@ -68,11 +77,13 @@ class SoftMomentumBuffer:
         if self.momentum_map.shape != activation.shape:
              self.momentum_map = torch.zeros_like(activation)
 
-        self.momentum_map = self.decay * self.momentum_map + activation
+        # In-place update for efficiency
+        # Use Exponential Moving Average (EMA) to keep momentum bounded in [0, 1]
+        # M_t = decay * M_{t-1} + (1 - decay) * activation
+        self.momentum_map.mul_(self.decay).add_(activation, alpha=(1.0 - self.decay))
         
-        # Detach to prevent gradient explosion over long sequences if not needed
-        # Assuming inference-time optimization or no backprop through time here
-        # self.momentum_map = self.momentum_map.detach() 
+        # Invalidate cache since momentum has changed
+        self.cached_scale = None
 
     def update_input_len(self, length):
         self.input_len = length
@@ -81,6 +92,7 @@ class SoftMomentumBuffer:
         self.momentum_map = None
         self.input_len = 0
         self.num_image_patches = None
+        self.cached_scale = None
 
     def calibrate(self, value, alpha, image_token_index, layer_idx=None):
         """
@@ -115,27 +127,21 @@ class SoftMomentumBuffer:
             pass
 
         # Prepare modulation factor
-        # alpha is the target multiplier for "selected" tokens.
-        # New multiplier = 1 + momentum * (alpha - 1)
-        # If momentum is approx 1 (sigmoid saturated), we get alpha.
-        # If momentum is higher (accumulated), we get > alpha.
-        
-        # Map shape: [bsz, num_patches]. Broadcast to [bsz, num_heads, num_patches, head_dim]
-        # momentum_map is [bsz, patches] or [patches]
-        # Reshape to [B, 1, patches, 1] for broadcasting
-        momentum_factor = self.momentum_map.reshape(-1, self.num_image_patches).unsqueeze(1).unsqueeze(-1)
+        # Optimization: use cached scale if available
+        if self.cached_scale is None:
+            # Map shape: [bsz, num_patches]. Broadcast to [bsz, num_heads, num_patches, head_dim]
+            # momentum_map is [bsz, patches] or [patches]
+            # Reshape to [B, 1, patches, 1] for broadcasting
+            momentum_factor = self.momentum_map.reshape(-1, self.num_image_patches).unsqueeze(1).unsqueeze(-1)
 
-        # Calculate scale
-        # We use (alpha - 1) as the gain factor.
-        scale = 1.0 + momentum_factor * (alpha - 1.0)
+            # Calculate scale
+            # We use (alpha - 1) as the gain factor.
+            self.cached_scale = 1.0 + momentum_factor * (alpha - 1.0)
         
+        scale = self.cached_scale
+
         # Apply scale
         # value is [bsz, num_kv_heads, seq_len, head_dim]
-        # We need to handle num_kv_heads vs num_heads used in momentum calculation?
-        # Momentum is calculated from attention weights which are usually averaged or per-head?
-        # In original code: indices = (ratio >= tau).nonzero()
-        # image_attention was averaged over heads: .mean(dim=1)
-        # So momentum is per-patch (averaged over heads).
         
         # Safe slice update
         current_len = value.shape[2]
@@ -152,7 +158,8 @@ class SoftMomentumBuffer:
             # scale slice needs to have 4 dimensions.
             scale_slice = scale[:, :, :patch_len, :]
             
-            value[:, :, valid_start:valid_end, :] *= scale_slice.to(value.dtype)
+            # In-place multiplication
+            value[:, :, valid_start:valid_end, :].mul_(scale_slice.to(value.dtype))
 
     def update_patch_num(self, num_image_patches):
         self.num_image_patches = num_image_patches

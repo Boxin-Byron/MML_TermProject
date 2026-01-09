@@ -18,8 +18,8 @@ BETA=0.1
 TAU=1.5
 LAYER=20
 SAVE_FOLDER="./results"
-DECAY=0.9
-GATE_TYPE="sigmoid"
+DECAY=0.0
+GATE_TYPE="bounded_relu"
 SHARPNESS=1.5
 SEED=42
 
