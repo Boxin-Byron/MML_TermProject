@@ -220,6 +220,7 @@ images/
 # 忽略生成的评估结果
 output/
 eval_results/
+sparc_plots/
 results/
 *.jsonl
 *.json
