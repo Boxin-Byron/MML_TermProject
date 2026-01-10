@@ -297,36 +297,52 @@ def plot_attention_dynamics(attn_sequence, save_path="figure4_dynamics.png"):
         print(f"[ERROR] Failed to convert dynamics to array: {e}")
         # Debug why
         shapes = [d.shape for d in dynamics]
-        print(f"[DEBUG] Shapes collected: {shapes[:5]} ...")
+        # print(f"[DEBUG] Shapes collected: {shapes[:5]} ...")
         return
 
     if dynamics.shape[0] == 0:
         return
 
-    plt.figure(figsize=(12, 6))
+    # Sort tokens by total attention to make the plot cleaner (put active tokens at top)
+    # shapes: dynamics [T, 576]
+    total_attn_per_token = dynamics.sum(axis=0)
+    sorted_indices = np.argsort(total_attn_per_token)[::-1] # Descending
+    sorted_dynamics = dynamics[:, sorted_indices]
+
+    plt.figure(figsize=(14, 8))
     
-    # Transpose so x-axis is Time, y-axis is Image Token Index
-    sns.heatmap(dynamics.T, cmap="inferno", cbar=True, vmin=0, vmax=np.percentile(dynamics, 99))
+    # Transpose so x-axis is Time, y-axis is Sorting Image Token Index
+    # Use log scale or robust quantile for better contrast
     
-    plt.title("Temporal Dynamics of Image Attention")
+    vmax = np.percentile(sorted_dynamics, 99.5)
+    ax = sns.heatmap(sorted_dynamics.T, cmap="magma", cbar=True, vmin=0, vmax=vmax)
+    
+    plt.title("Temporal Dynamics of Image Attention (Sorted by Relevance)")
     plt.xlabel("Generation Step")
-    plt.ylabel("Image Token Index")
-    plt.savefig(save_path)
+    plt.ylabel("Image Token Index (Sorted by Total Attention)")
+    
+    # Reduce Tick density
+    plt.yticks(ticks=np.arange(0, 576, 50), labels=np.arange(0, 576, 50))
+    
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Saved {save_path}")
     
-    # Top-K Lines
+    # Top-K Lines (Keep this, effectively shows the first K rows of our sorted matrix)
     plt.figure(figsize=(12, 6))
     if dynamics.shape[0] > 0:
-        mean_attn = dynamics.mean(axis=0)
-        top_k_indices = np.argsort(mean_attn)[-5:]
-        for idx in top_k_indices:
-            plt.plot(dynamics[:, idx], label=f"Token {idx}")
+        # We already sorted them, so just pick first 5
+        top_k_indices_original = sorted_indices[:5]
+        
+        for i, original_idx in enumerate(top_k_indices_original):
+            plt.plot(dynamics[:, original_idx], label=f"Token {original_idx} (Rank {i+1})", linewidth=1.5)
+            
         plt.legend()
-        plt.title("Attention Weight of Top Visual Tokens over Time")
+        plt.title("Attention Weight of Top-5 Visual Tokens over Time")
         plt.xlabel("Generation Step")
         plt.ylabel("Attention Weight")
-        plt.savefig(save_path.replace(".png", "_lines.png"))
+        plt.grid(True, alpha=0.3)
+        plt.savefig(save_path.replace(".png", "_lines.png"), dpi=300)
         plt.close()
 
 def plot_img_text_ratio(attn_sequence, save_path="figure5_ratio.png"):
