@@ -32,19 +32,48 @@ DECAY=0.6
 
 GATE_TYPE="bounded_relu"
 SHARPNESS=1.5
+L_FACTOR=2.0
 SEED=42
+MODEL_PATH_V1_5="./llava-v1.5-7b"
+# # ==========================================
+# # 2. DOCCI
+# # ==========================================
+EXP_NAME="DOCCI_improved_$DECAY\_$L_FACTOR"
+DATASET_TYPE="docci"
+IMAGE_FOLDER="./dataset/docci/images"
+ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
+
+echo "Running DOCCI Captioning (Improved V2)..."
+CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
+    --experiment_name "$EXP_NAME" \
+    --annotation-file "$ANNOTATION_FILE" \
+    --model-path "$MODEL_PATH_V1_5" \
+    --dataset_type "$DATASET_TYPE" \
+    --alpha "$ALPHA" \
+    --beta "$BETA" \
+    --image-folder "$IMAGE_FOLDER" \
+    --save_path "$SAVE_FOLDER" \
+    --start_layer 0 \
+    --end_layer 31 \
+    --selected_layer "$LAYER" \
+    --tau "$TAU" \
+    --seed "$SEED" \
+    --use_v2 \
+    --decay "$DECAY" \
+    --l_factor "$L_FACTOR" \
+    --gate_type "$GATE_TYPE" \
+    --sharpness "$SHARPNESS" \
 
 # ==========================================
 # 3. COCO (Focus on this first for debugging)
 # ==========================================
-EXP_NAME="COCO_improved_v2"
+
 DATASET_TYPE="coco"
 IMAGE_FOLDER="./dataset/coco/val2014"
 
 # L-factor for Adaptive Thresholding
 # Med: ~2.2. Higher = Stricter (Shorter). Lower = More permissive (Longer).
-L_FACTOR=2
-
+EXP_NAME="COCO_improved_v2_$L_FACTOR"
 echo "Running COCO Captioning (Improved V2)..."
 CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
     --experiment_name "$EXP_NAME" \

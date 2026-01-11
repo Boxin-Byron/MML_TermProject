@@ -31,7 +31,7 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(
-        model_path, args.model_base, model_name, load_4bit=True
+        model_path, args.model_base, model_name, load_4bit=False
     )
 
     if args.use_v2:
@@ -109,11 +109,12 @@ def eval_model(args):
         print(
             f"It seems that this is a plain model, but it is not using a mmtag prompt, auto switching to {args.conv_mode}."
         )
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device=device)
     for (input_ids, image_tensor, image_sizes, img_id), line in tqdm(
         zip(data_loader, annotations), total=len(annotations)
     ):
-        input_ids = input_ids.to(device="cuda", non_blocking=True)
+        input_ids = input_ids.to(device=device, non_blocking=True)
 
         img_save = {}
         img_save["image_id"] = img_id[0]
@@ -124,7 +125,7 @@ def eval_model(args):
             output_ids = model.generate(
                 input_ids,
                 images=image_tensor.to(
-                    dtype=torch.float16, device="cuda", non_blocking=True
+                    dtype=torch.float16, device=device, non_blocking=True
                 ),
                 image_sizes=image_sizes,
                 do_sample=True if args.temperature > 0 else False,

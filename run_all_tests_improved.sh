@@ -22,7 +22,7 @@ DECAY=0.6
 GATE_TYPE="bounded_relu"
 SHARPNESS=1.5
 SEED=42
-
+MODEL_PATH_V1_5="./llava-v1.5-7b"
 # # ==========================================
 # # 1. IIW-400
 # # ==========================================
@@ -67,30 +67,30 @@ SEED=42
 # # ==========================================
 # # 2. DOCCI
 # # ==========================================
-# EXP_NAME="DOCCI_improved"
-# DATASET_TYPE="docci"
-# IMAGE_FOLDER="./dataset/docci/images"
-# ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
+EXP_NAME="DOCCI_improved_$DECAY"
+DATASET_TYPE="docci"
+IMAGE_FOLDER="./dataset/docci/images"
+ANNOTATION_FILE="./dataset/docci/docci_descriptions.jsonlines"
 
-# echo "Running DOCCI Captioning (Improved)..."
-# CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
-#     --experiment_name "$EXP_NAME" \
-#     --model-path "$MODEL_PATH_V1_5" \
-#     --dataset_type "$DATASET_TYPE" \
-#     --alpha "$ALPHA" \
-#     --beta "$BETA" \
-#     --image-folder "$IMAGE_FOLDER" \
-#     --annotation-file "$ANNOTATION_FILE" \
-#     --save_path "$SAVE_FOLDER" \
-#     --start_layer 0 \
-#     --end_layer 31 \
-#     --selected_layer "$LAYER" \
-#     --tau "$TAU" \
-#     --seed "$SEED" \
-#     --use_improved \
-#     --decay "$DECAY" \
-#     --gate_type "$GATE_TYPE" \
-#     --sharpness "$SHARPNESS"
+echo "Running DOCCI Captioning (Improved)..."
+CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
+    --experiment_name "$EXP_NAME" \
+    --model-path "$MODEL_PATH_V1_5" \
+    --dataset_type "$DATASET_TYPE" \
+    --alpha "$ALPHA" \
+    --beta "$BETA" \
+    --image-folder "$IMAGE_FOLDER" \
+    --annotation-file "$ANNOTATION_FILE" \
+    --save_path "$SAVE_FOLDER" \
+    --start_layer 0 \
+    --end_layer 31 \
+    --selected_layer "$LAYER" \
+    --tau "$TAU" \
+    --seed "$SEED" \
+    --use_improved \
+    --decay "$DECAY" \
+    --gate_type "$GATE_TYPE" \
+    --sharpness "$SHARPNESS"
 
 # echo "Running DOCCI CLAIR Evaluation (Improved)..."
 # python -m clair \
@@ -111,34 +111,34 @@ IMAGE_FOLDER="./dataset/coco/val2014"
 # Using defaults for other params or relying on script logic that coco implies certain paths if needed, 
 # but here we follow captioning_coco.sh which doesn't pass annotation file.
 
-echo "Running COCO Captioning (Improved)..."
-CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
-    --experiment_name "$EXP_NAME" \
-    --model-path "$MODEL_PATH_V1_5" \
-    --dataset_type "$DATASET_TYPE" \
-    --alpha "$ALPHA" \
-    --beta "$BETA" \
-    --image-folder "$IMAGE_FOLDER" \
-    --save_path "$SAVE_FOLDER" \
-    --start_layer 0 \
-    --end_layer 31 \
-    --selected_layer "$LAYER" \
-    --tau "$TAU" \
-    --seed "$SEED" \
-    --use_improved \
-    --decay "$DECAY" \
-    --gate_type "$GATE_TYPE" \
-    --sharpness "$SHARPNESS"
+# echo "Running COCO Captioning (Improved)..."
+# CUDA_VISIBLE_DEVICES=$DEVICE python -m eval \
+#     --experiment_name "$EXP_NAME" \
+#     --model-path "$MODEL_PATH_V1_5" \
+#     --dataset_type "$DATASET_TYPE" \
+#     --alpha "$ALPHA" \
+#     --beta "$BETA" \
+#     --image-folder "$IMAGE_FOLDER" \
+#     --save_path "$SAVE_FOLDER" \
+#     --start_layer 0 \
+#     --end_layer 31 \
+#     --selected_layer "$LAYER" \
+#     --tau "$TAU" \
+#     --seed "$SEED" \
+#     --use_improved \
+#     --decay "$DECAY" \
+#     --gate_type "$GATE_TYPE" \
+#     --sharpness "$SHARPNESS"
 
-echo "Running COCO CHAIR Evaluation (Improved)..."
-ANNOTATION_FOLDER="./dataset/coco/annotations"
-# NOTE: Ensure ./dataset/coco/annotations exists and contains captions_val2014.json or similar expected by chair.py
-python chair.py \
-    --cap_file "$SAVE_FOLDER/${EXP_NAME}.jsonl" \
-    --image_id_key image_id \
-    --caption_key caption \
-    --coco_path "$ANNOTATION_FOLDER" \
-    --save_path "$SAVE_FOLDER/${EXP_NAME}_chair.jsonl" \
-    > "$SAVE_FOLDER/${EXP_NAME}.log"
+# echo "Running COCO CHAIR Evaluation (Improved)..."
+# ANNOTATION_FOLDER="./dataset/coco/annotations"
+# # NOTE: Ensure ./dataset/coco/annotations exists and contains captions_val2014.json or similar expected by chair.py
+# python chair.py \
+#     --cap_file "$SAVE_FOLDER/${EXP_NAME}.jsonl" \
+#     --image_id_key image_id \
+#     --caption_key caption \
+#     --coco_path "$ANNOTATION_FOLDER" \
+#     --save_path "$SAVE_FOLDER/${EXP_NAME}_chair.jsonl" \
+#     > "$SAVE_FOLDER/${EXP_NAME}.log"
 
-echo "All improved tests finished!"
+# echo "All improved tests finished!"
